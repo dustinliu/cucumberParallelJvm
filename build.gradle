@@ -1,0 +1,13 @@
+apply plugin: 'groovy'
+
+version = '1.0'
+description = 'cucumber-jvm parallel runner'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile 'org.codehaus.groovy:groovy-all:2.3.7'
+    testCompile 'junit:junit:4.11'
+}
