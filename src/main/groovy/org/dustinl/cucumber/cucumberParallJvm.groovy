@@ -44,12 +44,12 @@ class CucumberRunner {
     }
 
     def getArguments() {
-        (['--glue', "classpath:$glue"] + getPluginsArgument() + ["classpath:${feature}"]) as String[]
+        (['--glue', glue] + getPluginsArgument() + ["classpath:${feature}"]) as String[]
     }
 
     def getRuntime() {
         def classLoader = Thread.currentThread().getContextClassLoader()
-        classLoader.addURL(new File(jarfile).toURI().toURL())
+//        classLoader.addURL(new File(jarfile).toURI().toURL())
         RuntimeOptions options = new RuntimeOptions(Arrays.asList(getArguments()))
         ResourceLoader resourceLoader = new MultiLoader(classLoader)
         ClassFinder classFinder = new ResourceLoaderClassFinder(resourceLoader, classLoader)

@@ -19,11 +19,9 @@ task listJars << {
     configurations.compile.each { File file -> println file.name }
 }
 
-task cucumber << {
+task cucumber(type:Exec)  {
     String cp = ''
     configurations.compile.each { cp += "${it}:" }
     cp += './calculator.jar'
-    def cmdLine = "java -cp $cp cucumber.api.cli.Main --glue classpath:org.dustinl --plugin pretty " +
-            "classpath:features/plus.feature"
-    println cmdLine
+    commandLine 'java', '-cp', cp, 'cucumber.api.cli.Main', '--glue', 'classpath:org.dustinl', '--plugin', 'pretty', 'classpath:features/'
 }
