@@ -1,7 +1,7 @@
 #!/usr/bin/env groovy
 package org.dustinl.cucumber
 
-@Grab(group='info.cukes', module='cucumber-groovy', version='1.2.0')
+@Grab(group = 'info.cukes', module = 'cucumber-groovy', version = '1.2.0')
 import cucumber.runtime.ClassFinder
 import cucumber.runtime.Runtime
 import cucumber.runtime.RuntimeOptions
@@ -10,7 +10,8 @@ import cucumber.runtime.io.ResourceLoader
 import cucumber.runtime.io.ResourceLoaderClassFinder
 import groovy.transform.ToString
 import groovyx.gpars.GParsPool
-@Grab(group='commons-io', module='commons-io', version='1.3.2')
+import org.apache.commons.io.FileUtils
+@Grab(group = 'commons-io', module = 'commons-io', version = '1.3.2')
 import org.apache.commons.io.FilenameUtils
 
 import java.util.jar.JarFile
@@ -21,9 +22,19 @@ class Plugin {
     String type
     String dir
     String file
+
+    Plugin(String pString) {
+        def (String type, String filename) = pString.split(':').toList()
+        this.type = type
+
+        if(!filename) filename = File.createTempFile(type, '.out').absolutePath
+        this.dir = FilenameUtils.getFullPathNoEndSeparator(filename)
+        this.file = FilenameUtils.getName(filename)
+        if (this.dir) FileUtils.forceMkdir(new File(dir))
+    }
 }
 
-class CucumberRunner {
+class CucumberThreadRunner {
     String jarfile
     String feature
     def plugins
@@ -34,7 +45,7 @@ class CucumberRunner {
             String plugin
             def featureName = FilenameUtils.getName(feature)
             if (it.file) {
-                plugin = "${it.type}:" + (it.dir ? "${it.dir}/${featureName}-${it.file}" :  "${featureName}-${it.file}")
+                plugin = "${it.type}:" + (it.dir ? "${it.dir}/${featureName}-${it.file}" : "${featureName}-${it.file}")
             } else {
                 plugin = it.type
             }
@@ -49,7 +60,6 @@ class CucumberRunner {
 
     def getRuntime() {
         def classLoader = Thread.currentThread().getContextClassLoader()
-        classLoader.addURL(new File(jarfile).toURI().toURL())
         RuntimeOptions options = new RuntimeOptions(Arrays.asList(getArguments()))
         ResourceLoader resourceLoader = new MultiLoader(classLoader)
         ClassFinder classFinder = new ResourceLoaderClassFinder(resourceLoader, classLoader)
@@ -66,37 +76,38 @@ cli.with {
 }
 
 def options = cli.parse(args)
-options?:System.exit(1)
+options ?: System.exit(1)
 
-if(!options.arguments()[0]) {
+if (!options.arguments()[0]) {
     cli.usage()
     System.exit(1)
 }
 
 
 def jarfile = options.arguments()[0]
-//this.getClass().classLoader.rootLoader.addURL(new File(jarfile).toURI().toURL())
+Thread.currentThread().getContextClassLoader().addURL(new File(jarfile).toURI().toURL())
 
 def features = new JarFile(jarfile).entries().findAll {
     ZipEntry entry -> entry.name.endsWith('.feature')
 }
 
-if (options.debug) { features.each { println "feature: [$it]" } }
-
-
-def plugins  = options.plugins.collect {
-    def (type, filename) = it.split(':').toList()
-    def dir = FilenameUtils.getFullPathNoEndSeparator(filename)
-    def file = FilenameUtils.getName(filename)
-    new Plugin(type: type, dir: dir, file: file)
+if (options.debug) {
+    features.each { println "feature: [$it]" }
 }
 
-if (options.debug) { plugins.each { println it } }
+
+def plugins = options.plugins.collect {
+    new Plugin(it as String)
+}
+
+if (options.debug) {
+    plugins.each { println it }
+}
 
 def runtimes = features.collect {
-    CucumberRunner runner = new CucumberRunner(jarfile: jarfile, glue: options.glue, feature: it.name, plugins:
+    CucumberThreadRunner runner = new CucumberThreadRunner(jarfile: jarfile, glue: options.glue, feature: it.name, plugins:
             plugins)
-    if(options.debug) println runner.getArguments()
+    if (options.debug) println runner.getArguments()
     runner.getRuntime()
 }
 
