@@ -10,7 +10,7 @@ import cucumber.runtime.io.ResourceLoader
 import cucumber.runtime.io.ResourceLoaderClassFinder
 import groovy.transform.ToString
 import groovyx.gpars.GParsPool
-@Grab(group='org.apache.commons', module='commons-io', version='1.3.2')
+@Grab(group='commons-io', module='commons-io', version='1.3.2')
 import org.apache.commons.io.FilenameUtils
 
 import java.util.jar.JarFile
@@ -49,7 +49,7 @@ class CucumberRunner {
 
     def getRuntime() {
         def classLoader = Thread.currentThread().getContextClassLoader()
-//        classLoader.addURL(new File(jarfile).toURI().toURL())
+        classLoader.addURL(new File(jarfile).toURI().toURL())
         RuntimeOptions options = new RuntimeOptions(Arrays.asList(getArguments()))
         ResourceLoader resourceLoader = new MultiLoader(classLoader)
         ClassFinder classFinder = new ResourceLoaderClassFinder(resourceLoader, classLoader)
@@ -75,7 +75,7 @@ if(!options.arguments()[0]) {
 
 
 def jarfile = options.arguments()[0]
-this.getClass().classLoader.rootLoader.addURL(new File(jarfile).toURI().toURL())
+//this.getClass().classLoader.rootLoader.addURL(new File(jarfile).toURI().toURL())
 
 def features = new JarFile(jarfile).entries().findAll {
     ZipEntry entry -> entry.name.endsWith('.feature')
