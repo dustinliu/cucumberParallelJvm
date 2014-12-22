@@ -1,7 +1,7 @@
-#!/bin/env groovy
+#!/usr/bin/env groovy
 package org.dustinl.cucumber
 
-@Grab(group='info.cukes', module='cucumber-java', version='1.2.0')
+@Grab(group='info.cukes', module='cucumber-groovy', version='1.2.0')
 import cucumber.runtime.ClassFinder
 import cucumber.runtime.Runtime
 import cucumber.runtime.RuntimeOptions
