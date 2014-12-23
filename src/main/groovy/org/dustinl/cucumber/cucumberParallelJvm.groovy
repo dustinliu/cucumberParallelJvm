@@ -27,7 +27,11 @@ class Plugin {
         def (String type, String filename) = pString.split(':').toList()
         this.type = type
 
-        if(!filename) filename = File.createTempFile(type, '.out').absolutePath
+        if(!filename)  {
+            File tmp = File.createTempFile(type, '.out')
+            tmp.deleteOnExit()
+            filename = tmp.absolutePath
+        }
         this.dir = FilenameUtils.getFullPathNoEndSeparator(filename)
         this.file = FilenameUtils.getName(filename)
         if (this.dir) FileUtils.forceMkdir(new File(dir))
@@ -39,6 +43,7 @@ class CucumberThreadRunner {
     String feature
     def plugins
     String glue
+    def runtime
 
     def getPluginsArgument() {
         plugins.collect {
@@ -58,12 +63,12 @@ class CucumberThreadRunner {
         (['--glue', glue] + getPluginsArgument() + ["classpath:${feature}"]) as String[]
     }
 
-    def getRuntime() {
+    def run() {
         def classLoader = Thread.currentThread().getContextClassLoader()
         RuntimeOptions options = new RuntimeOptions(Arrays.asList(getArguments()))
         ResourceLoader resourceLoader = new MultiLoader(classLoader)
         ClassFinder classFinder = new ResourceLoaderClassFinder(resourceLoader, classLoader)
-        new Runtime(resourceLoader, classFinder, classLoader, options)
+        new Runtime(resourceLoader, classFinder, classLoader, options).run()
     }
 }
 
@@ -92,7 +97,7 @@ def features = new JarFile(jarfile).entries().findAll {
 }
 
 if (options.debug) {
-    features.each { println "feature: [$it]" }
+    features.each { println "feature: $it" }
 }
 
 
@@ -101,15 +106,11 @@ def plugins = options.plugins.collect {
 }
 
 if (options.debug) {
-    plugins.each { println it }
+    plugins.each { println "plugin: $it" }
 }
 
-def runtimes = features.collect {
-    CucumberThreadRunner runner = new CucumberThreadRunner(jarfile: jarfile, glue: options.glue, feature: it.name, plugins:
-            plugins)
-    if (options.debug) println runner.getArguments()
-    runner.getRuntime()
-}
+def runner = features.collect { new CucumberThreadRunner(jarfile: jarfile, glue: options.glue, feature: it.name,
+        plugins: plugins) }
 
-GParsPool.withPool(4) { runtimes.eachParallel { it.run() } }
+GParsPool.withPool(4) { runner.eachParallel { it.run() } }
 
