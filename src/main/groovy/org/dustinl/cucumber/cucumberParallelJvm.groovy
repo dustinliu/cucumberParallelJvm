@@ -8,14 +8,99 @@ import cucumber.runtime.RuntimeOptions
 import cucumber.runtime.io.MultiLoader
 import cucumber.runtime.io.ResourceLoader
 import cucumber.runtime.io.ResourceLoaderClassFinder
+import groovy.grape.Grape
 import groovy.transform.ToString
-import groovyx.gpars.GParsPool
+import groovyx.gpars.group.DefaultPGroup
 import org.apache.commons.io.FileUtils
 @Grab(group = 'commons-io', module = 'commons-io', version = '1.3.2')
 import org.apache.commons.io.FilenameUtils
 
+import java.util.concurrent.TimeUnit
 import java.util.jar.JarFile
 import java.util.zip.ZipEntry
+
+def cli = new CliBuilder(usage: 'cucumberParallelJvm [options] jarfile')
+cli.with {
+    p longOpt: 'plugin', 'register cucumber plugin', args: 1, argName: 'plugin', required: true
+    g longOpt: 'glue', 'glue location', args: 1, argName: 'glue path', required: true
+    d longOpt: 'debug', 'enable debug message'
+    f longOpt: 'fork', 'number of process to fork', args: 1, argName: 'number of fork'
+    t longOpt: 'thread', 'number of thread', args: 1, argName: 'number of thread'
+}
+
+def options = cli.parse(args)
+options ?: System.exit(1)
+
+if (!options.arguments()[0]) {
+    cli.usage()
+    System.exit(1)
+}
+
+
+int fork = 0
+int thread = 0
+if (options.fork) fork = Integer.parseInt(options.fork)
+if (options.thread) thread = Integer.parseInt(options.thread)
+
+
+if( !fork  && !thread) fork = 1
+
+if (fork && thread) {
+    println 'info: both fork and thread defined, use fork mode'
+    thread = 0
+}
+
+if(options.debug) { println "${fork} fork, ${thread} thread"}
+
+def jarfile = options.arguments()[0]
+Thread.currentThread().getContextClassLoader().addURL(new File(jarfile).toURI().toURL())
+
+def cp = Grape.resolve(* [[:], [group: 'info.cukes', module: 'cucumber-groovy', version: '1.2.0']]).findAll()
+cp.addAll  Grape.resolve(* [[:], [group: 'org.codehaus.groovy', module: 'groovy-all', version: '2.3.3']]).findAll()
+cp << new File(jarfile).toURI()
+if(options.debug) cp.each {println "classpath: ${new File(it).path}"}
+def classpath = cp.collect {new File(it).path}.join(':')
+
+def features = new JarFile(jarfile).entries().findAll { ZipEntry entry -> entry.name.endsWith('.feature') }
+if (options.debug) {
+    features.each { println "feature: $it" }
+}
+
+def plugins = options.plugins.collect { new Plugin(it as String) }
+if (options.debug) {
+    plugins.each { println "plugin: $it" }
+}
+
+def runners
+int n
+if (fork) {
+    n = fork
+    if (options.debug) println "classpath string: $classpath"
+    runners = features.collect { new ProcessFeatureRunner(classpath: classpath, glue: options.glue, feature: it.name,
+            plugins: plugins) }
+} else {
+    n = thread
+    runners = features.collect {
+        new ThreadFeatureRunner(glue: options.glue, feature: it.name, plugins: plugins) }
+}
+
+def startTime = System.currentTimeMillis()
+if(options.debug) { println "${n} parallel runners"}
+
+//withPool(n) {
+//    runners.collectParallel {it.run()}.each { it.eachLine {println it} }
+//}
+
+def group = new DefaultPGroup(n)
+runners.collect { group.task {it.run()}}.each{ it.get().eachLine {println it}}
+
+int elapse = System.currentTimeMillis() - startTime
+println "test run: ${milli2Time(elapse)}"
+
+//mergeReport(features, plugins)
+
+//====================================================
+
 
 @ToString
 class Plugin {
@@ -27,23 +112,16 @@ class Plugin {
         def (String type, String filename) = pString.split(':').toList()
         this.type = type
 
-        if(!filename)  {
-            File tmp = File.createTempFile(type, '.out')
-            tmp.deleteOnExit()
-            filename = tmp.absolutePath
-        }
         this.dir = FilenameUtils.getFullPathNoEndSeparator(filename)
         this.file = FilenameUtils.getName(filename)
         if (this.dir) FileUtils.forceMkdir(new File(dir))
     }
 }
 
-class CucumberThreadRunner {
-    String jarfile
+class FeatureRunner {
     String feature
-    def plugins
     String glue
-    def runtime
+    def plugins
 
     def getPluginsArgument() {
         plugins.collect {
@@ -62,55 +140,39 @@ class CucumberThreadRunner {
     def getArguments() {
         (['--glue', glue] + getPluginsArgument() + ["classpath:${feature}"]) as String[]
     }
+}
 
+class ThreadFeatureRunner extends FeatureRunner {
     def run() {
         def classLoader = Thread.currentThread().getContextClassLoader()
         RuntimeOptions options = new RuntimeOptions(Arrays.asList(getArguments()))
         ResourceLoader resourceLoader = new MultiLoader(classLoader)
         ClassFinder classFinder = new ResourceLoaderClassFinder(resourceLoader, classLoader)
         new Runtime(resourceLoader, classFinder, classLoader, options).run()
+        new ByteArrayInputStream( " ".getBytes() )
     }
 }
 
 
-def cli = new CliBuilder(usage: 'cucumberParallelJvm [options] jarfile')
-cli.with {
-    p longOpt: 'plugin', 'register cucumber plugin', args: 1, argName: 'plugin', required: true
-    g longOpt: 'glue', 'glue location', args: 1, argName: 'glue path', required: true
-    d longOpt: 'debug', 'enable debug message'
-}
+class ProcessFeatureRunner extends FeatureRunner {
+    File out
+    String classpath
 
-def options = cli.parse(args)
-options ?: System.exit(1)
-
-if (!options.arguments()[0]) {
-    cli.usage()
-    System.exit(1)
+    def run() {
+        this.out = File.createTempFile(FilenameUtils.getName(feature), '.out')
+        out.deleteOnExit()
+        String cmd = "java -cp ${classpath} cucumber.api.cli.Main ${getArguments().join(' ')}"
+        new ProcessBuilder(cmd.split()).redirectErrorStream(true).start().getInputStream()
+    }
 }
 
 
-def jarfile = options.arguments()[0]
-Thread.currentThread().getContextClassLoader().addURL(new File(jarfile).toURI().toURL())
-
-def features = new JarFile(jarfile).entries().findAll {
-    ZipEntry entry -> entry.name.endsWith('.feature')
+def milli2Time (int elapse) {
+    String.format("%dh%dm%d.%ds",
+            TimeUnit.MILLISECONDS.toHours(elapse),
+            TimeUnit.MILLISECONDS.toMinutes(elapse) - TimeUnit.HOURS.toMinutes(TimeUnit.MILLISECONDS.toHours(elapse)),
+            TimeUnit.MILLISECONDS.toSeconds(elapse) - TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(elapse)),
+            TimeUnit.MILLISECONDS.toMillis(elapse) - TimeUnit.SECONDS.toMillis(TimeUnit.MILLISECONDS.toSeconds(elapse)),
+    )
 }
-
-if (options.debug) {
-    features.each { println "feature: $it" }
-}
-
-
-def plugins = options.plugins.collect {
-    new Plugin(it as String)
-}
-
-if (options.debug) {
-    plugins.each { println "plugin: $it" }
-}
-
-def runner = features.collect { new CucumberThreadRunner(jarfile: jarfile, glue: options.glue, feature: it.name,
-        plugins: plugins) }
-
-GParsPool.withPool(4) { runner.eachParallel { it.run() } }
 
