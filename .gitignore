@@ -28,3 +28,5 @@ gradle-app.setting
 .idea/
 cucumberParallelJvm.iml
 
+#jira
+atlassian-ide-plugin.xml
