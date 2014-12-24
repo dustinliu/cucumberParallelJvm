@@ -161,6 +161,7 @@ class FeatureRunner {
 class ThreadFeatureRunner extends FeatureRunner {
     Runtime runtime
     boolean done = false
+    CountDownLatch startSignal = new CountDownLatch(1)
 
     void run() {
         def classLoader = Thread.currentThread().getContextClassLoader()
@@ -169,18 +170,20 @@ class ThreadFeatureRunner extends FeatureRunner {
         ClassFinder classFinder = new ResourceLoaderClassFinder(resourceLoader, classLoader)
         runtime = new Runtime(resourceLoader, classFinder, classLoader, options)
         runtime.run()
+        startSignal.countDown()
         done = true
     }
 
     def getOutput() {
+        startSignal.await()
         new ByteArrayInputStream(" ".getBytes())
     }
 
     def getExitValue() {
+        startSignal.await()
         runtime.exitStatus()
     }
 }
-
 
 class ProcessFeatureRunner extends FeatureRunner {
     String classpath
@@ -202,6 +205,7 @@ class ProcessFeatureRunner extends FeatureRunner {
     }
 
     def getExitValue() {
+        startSignal.await()
         process.exitValue()
     }
 }
