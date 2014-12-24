@@ -10,11 +10,13 @@ import cucumber.runtime.io.ResourceLoader
 import cucumber.runtime.io.ResourceLoaderClassFinder
 import groovy.grape.Grape
 import groovy.transform.ToString
-import groovyx.gpars.group.DefaultPGroup
+import groovyx.gpars.GParsExecutorsPool
 import org.apache.commons.io.FileUtils
 @Grab(group = 'commons-io', module = 'commons-io', version = '1.3.2')
 import org.apache.commons.io.FilenameUtils
 
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.jar.JarFile
 import java.util.zip.ZipEntry
@@ -55,11 +57,7 @@ if(options.debug) { println "${fork} fork, ${thread} thread"}
 def jarfile = options.arguments()[0]
 Thread.currentThread().getContextClassLoader().addURL(new File(jarfile).toURI().toURL())
 
-def cp = Grape.resolve(* [[:], [group: 'info.cukes', module: 'cucumber-groovy', version: '1.2.0']]).findAll()
-cp.addAll  Grape.resolve(* [[:], [group: 'org.codehaus.groovy', module: 'groovy-all', version: '2.3.3']]).findAll()
-cp << new File(jarfile).toURI()
-if(options.debug) cp.each {println "classpath: ${new File(it).path}"}
-def classpath = cp.collect {new File(it).path}.join(':')
+def classpath = getClassPath(jarfile, options)
 
 def features = new JarFile(jarfile).entries().findAll { ZipEntry entry -> entry.name.endsWith('.feature') }
 if (options.debug) {
@@ -85,14 +83,17 @@ if (fork) {
 }
 
 def startTime = System.currentTimeMillis()
-if(options.debug) { println "${n} parallel runners"}
+if(options.debug) { println "$n parallel runners"}
 
 //withPool(n) {
 //    runners.collectParallel {it.run()}.each { it.eachLine {println it} }
 //}
 
-def group = new DefaultPGroup(n)
-runners.collect { group.task {it.run()}}.each{ it.get().eachLine {println it}}
+ExecutorService pool = Executors.newFixedThreadPool(1)
+//GParsExecutorsPool.withExistingPool(pool) {
+GParsExecutorsPool.withPool {
+    runners.collectParallel {it.run()}.each { it.eachLine {println it} }
+}
 
 int elapse = System.currentTimeMillis() - startTime
 println "test run: ${milli2Time(elapse)}"
@@ -101,6 +102,14 @@ println "test run: ${milli2Time(elapse)}"
 
 //====================================================
 
+def getClassPath(String jarfile, OptionAccessor options) {
+    Grape.grab(group: 'info.cukes', module: 'cucumber-groovy', version: '1.2.0')
+    def cp = Grape.resolve(*[[:], [group: 'info.cukes', module: 'cucumber-groovy', version: '1.2.0']]).findAll()
+    cp.addAll Grape.resolve(*[[:], [group: 'org.codehaus.groovy', module: 'groovy-all', version: '2.3.3']]).findAll()
+    cp << new File(jarfile).toURI()
+    if (options.debug) cp.each { println "classpath: ${new File(it).path}" }
+    cp.collect { new File(it).path }.join(':')
+}
 
 @ToString
 class Plugin {
