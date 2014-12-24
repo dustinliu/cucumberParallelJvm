@@ -10,11 +10,11 @@ import cucumber.runtime.io.ResourceLoader
 import cucumber.runtime.io.ResourceLoaderClassFinder
 import groovy.grape.Grape
 import groovy.transform.ToString
-import groovyx.gpars.GParsExecutorsPool
 import org.apache.commons.io.FileUtils
 @Grab(group = 'commons-io', module = 'commons-io', version = '1.3.2')
 import org.apache.commons.io.FilenameUtils
 
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -85,22 +85,29 @@ if (fork) {
 def startTime = System.currentTimeMillis()
 if(options.debug) { println "$n parallel runners"}
 
-//withPool(n) {
-//    runners.collectParallel {it.run()}.each { it.eachLine {println it} }
-//}
-
-ExecutorService pool = Executors.newFixedThreadPool(1)
-//GParsExecutorsPool.withExistingPool(pool) {
-GParsExecutorsPool.withPool {
-    runners.collectParallel {it.run()}.each { it.eachLine {println it} }
+ExecutorService pool = Executors.newFixedThreadPool(n)
+runners.each {
+    pool.submit(new Runnable() {
+        @Override
+        void run() {
+            it.run()
+        }
+    })
 }
+
+runners.each {it.getOutput().eachLine {println it} }
 
 int elapse = System.currentTimeMillis() - startTime
 println "test run: ${milli2Time(elapse)}"
 
-//mergeReport(features, plugins)
+if (runners.every {it.done}) pool.shutdown()
+
+mergeReport(features, plugins)
 
 //====================================================
+
+def mergeReport(features, plugins) {
+}
 
 def getClassPath(String jarfile, OptionAccessor options) {
     Grape.grab(group: 'info.cukes', module: 'cucumber-groovy', version: '1.2.0')
@@ -152,26 +159,50 @@ class FeatureRunner {
 }
 
 class ThreadFeatureRunner extends FeatureRunner {
-    def run() {
+    Runtime runtime
+    boolean done = false
+
+    void run() {
         def classLoader = Thread.currentThread().getContextClassLoader()
         RuntimeOptions options = new RuntimeOptions(Arrays.asList(getArguments()))
         ResourceLoader resourceLoader = new MultiLoader(classLoader)
         ClassFinder classFinder = new ResourceLoaderClassFinder(resourceLoader, classLoader)
-        new Runtime(resourceLoader, classFinder, classLoader, options).run()
-        new ByteArrayInputStream( " ".getBytes() )
+        runtime = new Runtime(resourceLoader, classFinder, classLoader, options)
+        runtime.run()
+        done = true
+    }
+
+    def getOutput() {
+        new ByteArrayInputStream(" ".getBytes())
+    }
+
+    def getExitValue() {
+        runtime.exitStatus()
     }
 }
 
 
 class ProcessFeatureRunner extends FeatureRunner {
-    File out
     String classpath
+    Process process
+    CountDownLatch startSignal = new CountDownLatch(1)
+    boolean done = false
 
     def run() {
-        this.out = File.createTempFile(FilenameUtils.getName(feature), '.out')
-        out.deleteOnExit()
         String cmd = "java -cp ${classpath} cucumber.api.cli.Main ${getArguments().join(' ')}"
-        new ProcessBuilder(cmd.split()).redirectErrorStream(true).start().getInputStream()
+        process = new ProcessBuilder(cmd.split()).redirectErrorStream(true).start()
+        startSignal.countDown()
+        process.waitFor()
+        done = true
+    }
+
+    def getOutput() {
+        startSignal.await()
+        process.getInputStream()
+    }
+
+    def getExitValue() {
+        process.exitValue()
     }
 }
 
