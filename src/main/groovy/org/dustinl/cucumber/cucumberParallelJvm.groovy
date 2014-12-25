@@ -57,7 +57,7 @@ if(options.debug) { println "${fork} fork, ${thread} thread"}
 def jarfile = options.arguments()[0]
 Thread.currentThread().getContextClassLoader().addURL(new File(jarfile).toURI().toURL())
 
-def classpath = getClassPath(jarfile, options)
+def classpath = getClassPath(jarfile, options.debug)
 
 def features = new JarFile(jarfile).entries().findAll { ZipEntry entry -> entry.name.endsWith('.feature') }
 if (options.debug) {
@@ -102,19 +102,15 @@ println "test run: ${milli2Time(elapse)}"
 
 if (runners.every {it.done}) pool.shutdown()
 
-mergeReport(features, plugins)
+System.exit(runners.every { it.exitValue == 0 } ? 0 :1)
 
-//====================================================
-
-def mergeReport(features, plugins) {
-}
-
-def getClassPath(String jarfile, OptionAccessor options) {
+//===============================================
+def getClassPath(jarfile, debug) {
     Grape.grab(group: 'info.cukes', module: 'cucumber-groovy', version: '1.2.0')
     def cp = Grape.resolve(*[[:], [group: 'info.cukes', module: 'cucumber-groovy', version: '1.2.0']]).findAll()
     cp.addAll Grape.resolve(*[[:], [group: 'org.codehaus.groovy', module: 'groovy-all', version: '2.3.3']]).findAll()
     cp << new File(jarfile).toURI()
-    if (options.debug) cp.each { println "classpath: ${new File(it).path}" }
+    if (debug) cp.each { println "classpath: ${new File(it).path}" }
     cp.collect { new File(it).path }.join(':')
 }
 
@@ -144,7 +140,7 @@ class FeatureRunner {
             String plugin
             def featureName = FilenameUtils.getName(feature)
             if (it.file) {
-                plugin = "${it.type}:" + (it.dir ? "${it.dir}/${featureName}-${it.file}" : "${featureName}-${it.file}")
+                plugin = "${it.type}:" + getFullPluginFileName(featureName, it.dir, it.file)
             } else {
                 plugin = it.type
             }
@@ -154,7 +150,12 @@ class FeatureRunner {
     }
 
     def getArguments() {
-        (['--glue', glue] + getPluginsArgument() + ["classpath:${feature}"]) as String[]
+        ([' --glue', glue] + getPluginsArgument() + ["classpath:${feature}"]) as String[]
+    }
+
+    def static getFullPluginFileName(feature, dir, file) {
+        def r = dir ? "${dir}/${feature}-${file}" : "${feature}-${file}"
+        r
     }
 }
 
@@ -192,11 +193,16 @@ class ProcessFeatureRunner extends FeatureRunner {
     boolean done = false
 
     def run() {
-        String cmd = "java -cp ${classpath} cucumber.api.cli.Main ${getArguments().join(' ')}"
+        String cmd = getCommand()
+        println getCommand()
         process = new ProcessBuilder(cmd.split()).redirectErrorStream(true).start()
         startSignal.countDown()
         process.waitFor()
         done = true
+    }
+
+    def getCommand() {
+        "java -cp ${classpath} cucumber.api.cli.Main ${getArguments().join(' ')}"
     }
 
     def getOutput() {
