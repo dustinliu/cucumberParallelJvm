@@ -1,25 +1,28 @@
 #!/usr/bin/env groovy
 package org.dustinl.cucumber
-
-@Grab(group = 'info.cukes', module = 'cucumber-groovy', version = '1.2.0')
 import cucumber.runtime.ClassFinder
 import cucumber.runtime.Runtime
 import cucumber.runtime.RuntimeOptions
 import cucumber.runtime.io.MultiLoader
+
+//@Grab(group = 'info.cukes', module = 'cucumber-groovy', version = '1.2.0')
 import cucumber.runtime.io.ResourceLoader
 import cucumber.runtime.io.ResourceLoaderClassFinder
 import groovy.grape.Grape
-import groovy.transform.ToString
 import org.apache.commons.io.FileUtils
-@Grab(group = 'commons-io', module = 'commons-io', version = '1.3.2')
 import org.apache.commons.io.FilenameUtils
 
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+
+//@Grab(group = 'org.apache.commons', module = 'commons-io', version = '1.3.2')
 import java.util.concurrent.TimeUnit
 import java.util.jar.JarFile
 import java.util.zip.ZipEntry
+
+def env = System.getenv()
+env.each {key, value -> println("${key}: ${value}")}
 
 def cli = new CliBuilder(usage: 'cucumberParallelJvm [options] jarfile')
 cli.with {
@@ -48,7 +51,7 @@ if (options.thread) thread = Integer.parseInt(options.thread)
 if( !fork  && !thread) fork = 1
 
 if (fork && thread) {
-    println 'info: both fork and thread defined, use fork mode'
+    println '[info] both fork and thread defined, use fork mode'
     thread = 0
 }
 
@@ -64,10 +67,8 @@ if (options.debug) {
     features.each { println "feature: $it" }
 }
 
-def plugins = options.plugins.collect { new Plugin(it as String) }
-if (options.debug) {
-    plugins.each { println "plugin: $it" }
-}
+def plugins = options.plugins.collect { new Plugin(it) }
+if (options.debug) { plugins.each { println "plugin: $it" } }
 
 def runners
 int n
@@ -106,7 +107,6 @@ System.exit(runners.every { it.exitValue == 0 } ? 0 :1)
 
 //===============================================
 def getClassPath(jarfile, debug) {
-    Grape.grab(group: 'info.cukes', module: 'cucumber-groovy', version: '1.2.0')
     def cp = Grape.resolve(*[[:], [group: 'info.cukes', module: 'cucumber-groovy', version: '1.2.0']]).findAll()
     cp.addAll Grape.resolve(*[[:], [group: 'org.codehaus.groovy', module: 'groovy-all', version: '2.3.3']]).findAll()
     cp << new File(jarfile).toURI()
@@ -114,13 +114,12 @@ def getClassPath(jarfile, debug) {
     cp.collect { new File(it).path }.join(':')
 }
 
-@ToString
 class Plugin {
     String type
     String dir
     String file
 
-    Plugin(String pString) {
+    Plugin(pString) {
         def (String type, String filename) = pString.split(':').toList()
         this.type = type
 
@@ -150,12 +149,11 @@ class FeatureRunner {
     }
 
     def getArguments() {
-        ([' --glue', glue] + getPluginsArgument() + ["classpath:${feature}"]) as String[]
+        (['--glue', glue] + getPluginsArgument() + ["classpath:${feature}"]) as String[]
     }
 
     def static getFullPluginFileName(feature, dir, file) {
-        def r = dir ? "${dir}/${feature}-${file}" : "${feature}-${file}"
-        r
+        dir ? "${dir}/${feature}-${file}" : "${feature}-${file}"
     }
 }
 
