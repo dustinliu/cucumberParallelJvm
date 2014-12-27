@@ -1,4 +1,5 @@
 apply plugin: 'groovy'
+apply plugin:'application'
 
 version = '1.0'
 description = 'cucumber-jvm parallel runner'
@@ -7,21 +8,53 @@ repositories {
     mavenCentral()
 }
 
+ext {
+    groovyVersion = '2.3.8'
+}
+
+configurations {
+    groovy
+    provided
+}
+
+sourceSets {
+    main {
+        compileClasspath += configurations.provided
+        runtimeClasspath += configurations.provided
+    }
+    test {
+        compileClasspath += configurations.provided
+        runtimeClasspath += configurations.provided
+    }
+}
+
 dependencies {
-    compile 'org.codehaus.groovy:groovy-all:2.3.7'
+    provided "org.codehaus.groovy:groovy-all:${groovyVersion}"
     compile 'info.cukes:cucumber-groovy:1.2.0'
-    compile 'junit:junit:4.11'
     compile 'org.apache.commons:commons-io:1.3.2'
     compile 'org.codehaus.gpars:gpars:1.2.1'
+    compile "org.apache.ivy:ivy:2.3.0"
+    groovy "org.apache.ivy:ivy:2.3.0"
+    testCompile 'junit:junit:4.11'
+}
+
+tasks.withType(GroovyCompile) {
+    groovyClasspath += configurations.groovy
 }
 
 task listJars << {
-    configurations.compile.each { File file -> println file.name }
+    configurations.compile.each { File file -> println file }
 }
 
-task cucumber(type:Exec)  {
-    String cp = ''
-    configurations.compile.each { cp += "${it}:" }
-    cp += './calculator.jar'
-    commandLine 'java', '-cp', cp, 'cucumber.api.cli.Main', '--glue', 'classpath:org.dustinl', '--plugin', 'pretty', 'classpath:features/'
+task testGroovy(type:Exec) {
+    ignoreExitValue=true
+    def path = compileGroovy.groovyClasspath + configurations.testCompile + files(sourceSets.main.output.classesDir)
+    commandLine 'groovy', '-cp', path.join(':'), 'src/test/groovy/org/dustinl/cucumber/PluginTest.groovy'
 }
+
+//task test(overwrite:true, dependsOn:['testGroovy'])
+
+task list << {
+    println sourceSets.main.output.classesDir
+}
+
