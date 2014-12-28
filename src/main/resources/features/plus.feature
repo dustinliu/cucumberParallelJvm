@@ -14,4 +14,4 @@ Feature: plus
     Given I have entered 98 into the calculator
     And I have entered 34 into the calculator
     When I press plus
-    Then the stored result should be 131
+    Then the stored result should be 132

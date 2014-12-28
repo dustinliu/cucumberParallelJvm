@@ -66,7 +66,7 @@ int n
 if (fork) {
     n = fork
     if (options.debug) println "classpath string: $classpath"
-    runners = features.collect { new ProcessFeatureRunner(classpath: classpath, glue: options.glue, feature: it.name,
+    runners = features.collect { new ProcessFeatureRunner(classpath: classpath, glue: options.glue, feature: it,
             plugins: plugins) }
 } else {
     n = thread
@@ -86,6 +86,7 @@ runners.each {
         }
     })
 }
+
 
 runners.each {it.getOutput().eachLine {println it} }
 
@@ -107,7 +108,7 @@ def getFeatures(target) {
         File targetFile = new File(target)
         if (targetFile.isDirectory()) {
             targetFile.eachDirRecurse { it.eachFileMatch(FileType.FILES, ~/.*\.feature$/) { feature ->
-                features << feature.name}
+                features << feature.path}
             }
             features
         } else {

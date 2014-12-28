@@ -46,13 +46,14 @@ task processScript(type: Copy) {
     into("${buildDir}/script")
 }
 
-task testScript(type:Exec, dependsOn:'processScript')  {
+task testScript(type:Exec, dependsOn:[processScript,jar])  {
     commandLine "$buildDir/script/cucumberParallelJvm", '--plugin', 'pretty', '--plugin', 'json:target/cucumber.json',
-    '--glue',  'src/main/groovy', '--thread', '4', '-d', 'src'
-    println commandLine
+    '--glue',  'classpath:org.dustinl.cucumber.test', '--thread', '4', '-d', jar.archivePath
 }
 
 
 clean {
     delete 'target'
 }
+
+build.dependsOn testScript
