@@ -1,28 +1,22 @@
-package org.dustinl.cucumber
-
 import cucumber.runtime.ClassFinder
 import cucumber.runtime.Runtime
 import cucumber.runtime.RuntimeOptions
 import cucumber.runtime.io.MultiLoader
-
 import cucumber.runtime.io.ResourceLoader
 import cucumber.runtime.io.ResourceLoaderClassFinder
 import groovy.grape.Grape
+import groovy.io.FileType
 import org.apache.commons.io.FileUtils
 import org.apache.commons.io.FilenameUtils
 
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-
 import java.util.concurrent.TimeUnit
 import java.util.jar.JarFile
 import java.util.zip.ZipEntry
 
-def env = System.getenv()
-env.each {key, value -> println("${key}: ${value}")}
-
-def cli = new CliBuilder(usage: 'parallelLib [options] jarfile')
+def cli = new CliBuilder(usage: 'cucumberParallelLib [options] jarfile')
 cli.with {
     p longOpt: 'plugin', 'register cucumber plugin', args: 1, argName: 'plugin', required: true
     g longOpt: 'glue', 'glue location', args: 1, argName: 'glue path', required: true
@@ -55,12 +49,11 @@ if (fork && thread) {
 
 if(options.debug) { println "${fork} fork, ${thread} thread"}
 
-def jarfile = options.arguments()[0]
-Thread.currentThread().getContextClassLoader().addURL(new File(jarfile).toURI().toURL())
+def targetFeature = options.arguments()[0]
 
-def classpath = getClassPath(jarfile, options.debug)
+def classpath = getClassPath(targetFeature, options.glue, options.debug)
 
-def features = new JarFile(jarfile).entries().findAll { ZipEntry entry -> entry.name.endsWith('.feature') }
+def features = getFeatures(targetFeature)
 if (options.debug) {
     features.each { println "feature: $it" }
 }
@@ -78,7 +71,7 @@ if (fork) {
 } else {
     n = thread
     runners = features.collect {
-        new ThreadFeatureRunner(glue: options.glue, feature: it.name, plugins: plugins) }
+        new ThreadFeatureRunner(glue: options.glue, feature: it, plugins: plugins) }
 }
 
 def startTime = System.currentTimeMillis()
@@ -104,10 +97,31 @@ if (runners.every {it.done}) pool.shutdown()
 System.exit(runners.every { it.exitValue == 0 } ? 0 :1)
 
 //===============================================
-def getClassPath(jarfile, debug) {
+def getFeatures(target) {
+    if (target.endsWith('.jar')) {
+        Thread.currentThread().getContextClassLoader().addURL(new File(target).toURI().toURL())
+        new JarFile(target).entries().findAll { ZipEntry entry -> entry.name.endsWith('.feature') }.collect
+        {"classpath:$it"}
+    } else {
+        def features = []
+        File targetFile = new File(target)
+        if (targetFile.isDirectory()) {
+            targetFile.eachDirRecurse { it.eachFileMatch(FileType.FILES, ~/.*\.feature$/) { feature ->
+                features << feature.name}
+            }
+            features
+        } else {
+            target
+        }
+    }
+}
+
+def getClassPath(target, glue, debug) {
     def cp = Grape.resolve(*[[:], [group: 'info.cukes', module: 'cucumber-groovy', version: '1.2.0']]).findAll()
     cp.addAll Grape.resolve(*[[:], [group: 'org.codehaus.groovy', module: 'groovy-all', version: '2.3.3']]).findAll()
-    cp << new File(jarfile).toURI()
+    File targetFile = new File(target)
+    if (target.endsWith('.jar')) cp << targetFile.toURI()
+    if (new File(glue).isDirectory()) cp << new File(glue).toURI()
     if (debug) cp.each { println "classpath: ${new File(it).path}" }
     cp.collect { new File(it).path }.join(':')
 }
@@ -147,7 +161,7 @@ class FeatureRunner {
     }
 
     def getArguments() {
-        (['--glue', glue] + getPluginsArgument() + ["classpath:${feature}"]) as String[]
+        (['--glue', glue] + getPluginsArgument() + [feature]) as String[]
     }
 
     def static getFullPluginFileName(feature, dir, file) {

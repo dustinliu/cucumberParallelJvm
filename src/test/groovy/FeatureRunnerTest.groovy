@@ -1,4 +1,4 @@
-package org.dustinl.cucumber
+
 /**
  * Created by dustinl on 12/25/14.
  */
@@ -17,8 +17,9 @@ class FeatureRunnerTest extends GroovyTestCase {
         def plugins = [new Plugin('pretty'), new Plugin('junit:target/ccc/junit.xml')]
         FeatureRunner runner = new FeatureRunner(feature: feature, glue: glue, plugins: plugins)
         assert runner.getArguments() == ['--glue', glue, '--plugin', 'pretty', '--plugin',
-                                         'junit:target/ccc/feature-junit.xml', 'classpath:feature'] as String[]
+                                         'junit:target/ccc/feature-junit.xml', 'feature'] as String[]
     }
+
 
     void testGetFullPluginFileNameWithDir() {
         assert FeatureRunner.getFullPluginFileName('ffff', 'target/ddd', 'ttt.json') == 'target/ddd/ffff-ttt.json'

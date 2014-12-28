@@ -1,0 +1,5 @@
+#!/bin/sh
+export BASEDIR=$(dirname $0)
+echo $BASEDIR
+
+groovy $BASEDIR/cucumberParallelJvm.groovy $@

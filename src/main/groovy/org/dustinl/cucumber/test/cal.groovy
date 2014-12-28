@@ -1,5 +1,4 @@
-package org.dustinl.cucumber
-
+package org.dustinl.cucumber.test
 import cucumber.api.groovy.EN
 import cucumber.api.groovy.Hooks
 

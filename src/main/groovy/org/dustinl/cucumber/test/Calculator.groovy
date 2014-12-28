@@ -1,4 +1,4 @@
-package org.dustinl.cucumber
+package org.dustinl.cucumber.test
 
 public class Calculator {
     List<Double> stack = new ArrayList<Double>();
